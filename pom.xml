@@ -6,7 +6,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>3.5.0</version> <!-- Senin orijinal versiyonun korundu -->
-        <relativePath/> 
+        <relativePath/>
     </parent>
     <groupId>com.hastane</groupId>
     <artifactId>hastanebackend</artifactId>
@@ -16,12 +16,11 @@
 
     <properties>
         <java.version>17</java.version>
-        <!-- LOMBOK VERSİYONU BURADA TANIMLANDI -->
-        <lombok.version>1.18.30</lombok.version> 
+        <lombok.version>1.18.30</lombok.version>
+        <jjwt.version>0.12.5</jjwt.version> <!-- JJWT versiyonunu bir property olarak tanımladık -->
     </properties>
 
     <dependencies>
-        <!-- Tüm dependency'lerin aynı kaldı -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
@@ -46,9 +45,42 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version> <!-- Versiyonu buradan alıyor -->
+            <version>${lombok.version}</version>
             <optional>true</optional>
         </dependency>
+
+        <!-- Jackson Hibernate 6 Datatype -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-hibernate6</artifactId>
+        </dependency>
+
+        <!-- Jackson Java 8 Date/Time Datatype -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
+        <!-- YENİ EKLENEN BAĞIMLILIKLAR: JWT (JSON Web Token) için -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId> <!-- veya jjwt-gson eğer Gson kullanıyorsanız -->
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- JWT BAĞIMLILIKLARI SONU -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -72,7 +104,7 @@
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version> <!-- Versiyonu buradan alıyor -->
+                            <version>${lombok.version}</version>
                         </path>
                     </annotationProcessorPaths>
                 </configuration>
