@@ -14,7 +14,10 @@ public interface PersonelService {
 
     Personel createPersonel(PersonelDTO personelDTO);
 
-    Personel updatePersonel(Integer id, Personel personelDetails);
+    // Bu yeni metot, DTO kullanarak personel güncellemesi yapacak.
+    // Eğer eski updatePersonel(Integer id, Personel personelDetails) metodu varsa
+    // onu kaldırabilir veya yorum satırı yapabilirsin, çünkü DTO ile çalışmak daha esnek.
+    Personel updatePersonelWithDTO(Integer id, PersonelDTO personelDTO);
 
     void deletePersonel(Integer id);
     

@@ -12,7 +12,8 @@ import java.util.Optional;
 public interface PersonelRepository extends JpaRepository<Personel, Integer> {
 
     Optional<Personel> findByKullanici_Email(String email);
-
+    Optional<Personel> findByKullanici_Id(Integer kullaniciId);
+    
     List<Personel> findByDepartman_Id(Integer departmanId);
 
     @Query("SELECT p FROM Personel p JOIN p.kullanici u JOIN u.roller r WHERE r.ad = :rolAdi")
