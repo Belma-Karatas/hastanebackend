@@ -7,8 +7,8 @@ import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
-// Reçete entity'si ile ilişki için import (ileride)
-// import java.util.List;
+import java.util.HashSet; // Bu importu ekle
+import java.util.Set;     // Bu importu ekle
 
 @Entity
 @Table(name = "Muayene")
@@ -37,22 +37,35 @@ public class Muayene {
     @Column(name = "muayene_tarihi_saati", nullable = false)
     private LocalDateTime muayeneTarihiSaati;
 
-    // SİKAYET ALANI KALDIRILDI
-
-    @Column(name = "hikaye", columnDefinition = "TEXT") // Hastanın öyküsü
+    @Column(name = "hikaye", columnDefinition = "TEXT")
     private String hikaye;
     
-    @Column(name = "tani", columnDefinition = "TEXT") // Doktorun koyduğu tanı
+    @Column(name = "tani", columnDefinition = "TEXT")
     private String tani;
 
-    @Column(name = "tedavi_notlari", columnDefinition = "TEXT") // Tedavi planı, ek notlar
+    @Column(name = "tedavi_notlari", columnDefinition = "TEXT")
     private String tedaviNotlari;
 
     @CreationTimestamp
     @Column(name = "olusturulma_tarihi", updatable = false)
     private LocalDateTime olusturulmaTarihi;
 
-    // Bir muayenenin birden fazla reçetesi olabilir (ileride eklenecek)
-    // @OneToMany(mappedBy = "muayene", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    // private List<Recete> receteler;
+    // YENİ EKLENEN KISIM: Muayene'den Recete'ye OneToMany ilişki
+    // Bir muayenenin sıfır veya daha fazla reçetesi olabilir.
+    // `mappedBy = "muayene"`: Recete entity'sindeki 'muayene' alanı bu ilişkinin sahibidir.
+    // `cascade = CascadeType.ALL`: Muayene silinirse ilişkili reçeteler de silinir.
+    // `orphanRemoval = true`: Muayeneden bir reçete çıkarılırsa (ve başka muayeneye atanmazsa) DB'den silinir.
+    @OneToMany(mappedBy = "muayene", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+    private Set<Recete> receteler = new HashSet<>();
+
+    // Yardımcı metotlar (opsiyonel ama iyi pratiktir)
+    public void addRecete(Recete recete) {
+        receteler.add(recete);
+        recete.setMuayene(this);
+    }
+
+    public void removeRecete(Recete recete) {
+        receteler.remove(recete);
+        recete.setMuayene(null);
+    }
 }
