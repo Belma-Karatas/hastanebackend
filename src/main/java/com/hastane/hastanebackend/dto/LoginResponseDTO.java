@@ -1,45 +1,39 @@
 package com.hastane.hastanebackend.dto;
 
 import lombok.Data;
-import lombok.NoArgsConstructor; // Boş constructor için eklendi
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor; // Tüm alanlar için constructor'ı da ekleyebiliriz
 
-import java.util.List; // Roller için
+import java.util.List;
 
 @Data
-@NoArgsConstructor // Lombok'un tüm alanları içeren constructor'ı otomatik oluşturması için boş constructor da gerekebilir.
-                 // Veya @AllArgsConstructor yerine sadece gerekli constructor'ları manuel yazabilirsiniz.
+@NoArgsConstructor
+@AllArgsConstructor // Tüm alanları içeren constructor'ı Lombok'un oluşturması için eklendi
 public class LoginResponseDTO {
     private String accessToken;
     private String tokenType = "Bearer";
-    private List<String> roller; // Backend'den gelen roller (örn: ["ROLE_HASTA", "ROLE_ADMIN"])
-    private Integer hastaId;     // YENİ EKLENDİ: Eğer kullanıcı HASTA ise bu ID dolu olacak, değilse null olabilir.
-    private String email;        // Opsiyonel: Kullanıcının email'ini de döndürebiliriz.
-    private Integer kullaniciId; // Opsiyonel: Kullanıcının genel Kullanici ID'sini de döndürebiliriz.
+    private List<String> roller;
+    private String email;        // Giriş yapılan email (JWT'nin subject'i)
+    private Integer kullaniciId; // Kullanici entity'sinin ID'si
+    private Integer personelId;  // Personel entity'sinin ID'si (eğer kullanıcı personel ise, değilse null)
+    private Integer hastaId;     // Hasta entity'sinin ID'si (eğer kullanıcı hasta ise, değilse null)
 
-    // Sadece accessToken ve tokenType ile constructor (JWT üretimi için kullanılabilir)
+    // Sadece token ve type için constructor (Lombok @AllArgsConstructor varken bu gereksiz olabilir,
+    // ama spesifik bir kullanım durumu varsa kalabilir)
     public LoginResponseDTO(String accessToken, String tokenType) {
         this.accessToken = accessToken;
         this.tokenType = tokenType;
     }
 
-    // Tüm alanları içeren constructor (opsiyonel, Lombok @AllArgsConstructor da kullanılabilir ama
-    // bazı alanlar null olabileceği için bu daha kontrolü olabilir)
-    public LoginResponseDTO(String accessToken, String tokenType, List<String> roller, Integer hastaId, String email, Integer kullaniciId) {
-        this.accessToken = accessToken;
-        this.tokenType = tokenType;
-        this.roller = roller;
-        this.hastaId = hastaId;
-        this.email = email;
-        this.kullaniciId = kullaniciId;
-    }
-
-    // Lombok @Data zaten getter/setter'ları oluşturur, ancak isterseniz manuel de eklenebilir:
-    // public List<String> getRoller() { return roller; }
-    // public void setRoller(List<String> roller) { this.roller = roller; }
-    // public Integer getHastaId() { return hastaId; }
-    // public void setHastaId(Integer hastaId) { this.hastaId = hastaId; }
-    // public String getEmail() { return email; }
-    // public void setEmail(String email) { this.email = email; }
-    // public Integer getKullaniciId() { return kullaniciId; }
-    // public void setKullaniciId(Integer kullaniciId) { this.kullaniciId = kullaniciId; }
+    // Lombok @AllArgsConstructor zaten tüm alanları içeren bir constructor oluşturacaktır.
+    // Eğer spesifik bir sıralama veya mantık yoksa bu manuel constructor'a gerek kalmaz.
+    // public LoginResponseDTO(String accessToken, String tokenType, List<String> roller, String email, Integer kullaniciId, Integer personelId, Integer hastaId) {
+    //     this.accessToken = accessToken;
+    //     this.tokenType = tokenType;
+    //     this.roller = roller;
+    //     this.email = email;
+    //     this.kullaniciId = kullaniciId;
+    //     this.personelId = personelId;
+    //     this.hastaId = hastaId;
+    // }
 }

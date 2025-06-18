@@ -4,11 +4,13 @@ import com.hastane.hastanebackend.dto.LoginRequestDTO;
 import com.hastane.hastanebackend.dto.LoginResponseDTO;
 import com.hastane.hastanebackend.entity.Hasta;
 import com.hastane.hastanebackend.entity.Kullanici;
+import com.hastane.hastanebackend.entity.Personel; // Personel entity'sini import et
 import com.hastane.hastanebackend.repository.HastaRepository;
 import com.hastane.hastanebackend.repository.KullaniciRepository;
+import com.hastane.hastanebackend.repository.PersonelRepository; // PersonelRepository'yi import et
 import com.hastane.hastanebackend.security.jwt.JwtTokenProvider;
-import org.slf4j.Logger; // Logger
-import org.slf4j.LoggerFactory; // Logger
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -23,7 +25,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-@CrossOrigin(origins = "*", maxAge = 3600) // Geliştirme için, production'da daha spesifik olmalı
+@CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -32,18 +34,21 @@ public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider tokenProvider;
-    private final KullaniciRepository kullaniciRepository; // Kullanici detaylarını çekmek için
-    private final HastaRepository hastaRepository;       // Hasta ID'sini çekmek için
+    private final KullaniciRepository kullaniciRepository;
+    private final HastaRepository hastaRepository;
+    private final PersonelRepository personelRepository; // YENİ: PersonelRepository bağımlılığı
 
     @Autowired
     public AuthController(AuthenticationManager authenticationManager,
                           JwtTokenProvider tokenProvider,
                           KullaniciRepository kullaniciRepository,
-                          HastaRepository hastaRepository) {
+                          HastaRepository hastaRepository,
+                          PersonelRepository personelRepository) { // YENİ: Constructor'a eklendi
         this.authenticationManager = authenticationManager;
         this.tokenProvider = tokenProvider;
         this.kullaniciRepository = kullaniciRepository;
         this.hastaRepository = hastaRepository;
+        this.personelRepository = personelRepository; // YENİ: Atama yapıldı
     }
 
     @PostMapping("/login")
@@ -60,46 +65,63 @@ public class AuthController {
         String jwt = tokenProvider.generateToken(authentication);
 
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-        String username = userDetails.getUsername(); // Bu email olmalı
+        String email = userDetails.getUsername(); // Bu email olmalı
 
-        // Kullanıcı bilgilerini ve rollerini çek
         List<String> roles = userDetails.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
 
-        // Kullanici entity'sini veritabanından çek (Kullanici ID'sini almak için)
-        Kullanici kullanici = kullaniciRepository.findByEmail(username)
-                .orElse(null); // Kullanıcı bulunamazsa null (bu durum normalde olmamalı)
+        Kullanici kullanici = kullaniciRepository.findByEmail(email)
+                .orElseThrow(() -> {
+                    // Bu durum normalde UserDetailsServiceImpl'de yakalanmalı,
+                    // ama bir güvenlik önlemi olarak burada da loglayabiliriz.
+                    logger.error("loadUserByUsername'den geçen kullanıcı ('{}') veritabanında bulunamadı!", email);
+                    return new RuntimeException("Kullanıcı doğrulama sonrası bulunamadı.");
+                });
 
-        Integer kullaniciId = null;
-        Integer hastaId = null;
+        Integer responseKullaniciId = kullanici.getId();
+        Integer responsePersonelId = null;
+        Integer responseHastaId = null;
 
-        if (kullanici != null) {
-            kullaniciId = kullanici.getId();
-            logger.info("Kullanıcı bulundu: ID={}, Email={}", kullaniciId, username);
+        logger.info("Kullanıcı bulundu: ID={}, Email={}", responseKullaniciId, email);
 
-            // Eğer kullanıcı HASTA rolüne sahipse, Hasta ID'sini de çek
-            if (roles.contains("ROLE_HASTA")) {
-                Optional<Hasta> hastaOpt = hastaRepository.findByKullanici_Id(kullaniciId);
-                if (hastaOpt.isPresent()) {
-                    hastaId = hastaOpt.get().getId();
-                    logger.info("Kullanıcı (ID: {}) için Hasta ID: {} bulundu.", kullaniciId, hastaId);
-                } else {
-                    logger.warn("Kullanıcı (ID: {}) HASTA rolüne sahip ancak hasta profili bulunamadı.", kullaniciId);
-                }
-            }
-        } else {
-            logger.warn("Login işlemi başarılı olmasına rağmen kullanıcı ('{}') veritabanında bulunamadı.", username);
+        // Personel ID'sini çek (Kullanici'nin bir Personel profili varsa)
+        // Bir kullanıcı hem personel hem de hasta olamayacağı varsayımıyla ilerliyoruz.
+        // Eğer olabiliyorsa, rollerine göre önceliklendirme veya farklı bir mantık gerekebilir.
+        Optional<Personel> personelOpt = personelRepository.findByKullanici_Id(responseKullaniciId);
+        if (personelOpt.isPresent()) {
+            responsePersonelId = personelOpt.get().getId();
+            logger.info("Kullanıcı (ID: {}) için Personel ID: {} bulundu.", responseKullaniciId, responsePersonelId);
         }
 
-        // LoginResponseDTO'yu oluştur ve set et (Lombok @Data getter/setter sağlar)
-        LoginResponseDTO responseDTO = new LoginResponseDTO(jwt, "Bearer");
-        responseDTO.setRoller(roles);
-        responseDTO.setHastaId(hastaId); // null olabilir
-        responseDTO.setEmail(username);  // Giriş yapılan email
-        responseDTO.setKullaniciId(kullaniciId); // Kullanici tablosundaki ID, null olabilir
+        // Eğer kullanıcı HASTA rolüne sahipse ve personel değilse (veya personel olsa bile hasta profilini de alabiliriz)
+        // Genellikle bir kullanıcı ya personeldir ya da hasta (sistem özelinde).
+        // Eğer bir personel aynı zamanda hasta olabiliyorsa, bu kontrol daha esnek olmalı.
+        // Şimdilik, eğer personel ID'si bulunamadıysa ve HASTA rolü varsa hasta ID'sini arayalım.
+        // Ya da, her iki ID'yi de (personel ve hasta) null değilse gönderebiliriz, frontend karar verir.
+        if (roles.contains("ROLE_HASTA")) {
+            Optional<Hasta> hastaOpt = hastaRepository.findByKullanici_Id(responseKullaniciId);
+            if (hastaOpt.isPresent()) {
+                responseHastaId = hastaOpt.get().getId();
+                logger.info("Kullanıcı (ID: {}) için Hasta ID: {} bulundu.", responseKullaniciId, responseHastaId);
+            } else {
+                logger.warn("Kullanıcı (ID: {}) HASTA rolüne sahip ancak hasta profili bulunamadı.", responseKullaniciId);
+            }
+        }
+        
+        // LoginResponseDTO oluşturulurken tüm yeni alanları kullanalım.
+        // Lombok @AllArgsConstructor kullandığımız için direkt constructor ile oluşturabiliriz.
+        LoginResponseDTO responseDTO = new LoginResponseDTO(
+                jwt,
+                "Bearer",
+                roles,
+                email,
+                responseKullaniciId,
+                responsePersonelId, // personelId eklendi
+                responseHastaId
+        );
 
-        logger.info("Login başarılı. Token ve kullanıcı bilgileri dönülüyor: {}", username);
+        logger.info("Login başarılı. Token, roller ve ID'ler dönülüyor: {}", email);
         return ResponseEntity.ok(responseDTO);
     }
 }
