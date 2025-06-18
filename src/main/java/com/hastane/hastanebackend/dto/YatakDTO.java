@@ -27,14 +27,14 @@ public class YatakDTO {
     @Positive(message = "Oda ID pozitif bir sayı olmalıdır.")
     private Integer odaId; // Bu yatak hangi odaya ait
 
-    // Görüntüleme için oda ve kat bilgilerini de DTO'ya ekleyebiliriz
-    private String odaNumarasiOdaDto; // Oda entity'sinden gelen oda numarası (karışmaması için farklı isimlendirdim)
+    // Görüntüleme için oda ve kat bilgileri
+    private String odaNumarasiOdaDto; // Oda entity'sinden gelen oda numarası
     private String katAdi;           // Kat entity'sinden gelen kat adı
 
     @NotNull(message = "Dolu/Boş durumu belirtilmelidir.")
     private Boolean doluMu;
 
-    // İleride yatakta yatan hastanın ID'si veya adı gibi bilgiler eklenebilir
-    // private Integer hastaId;
-    // private String hastaAdiSoyadi;
+    // Yatak doluysa, yatan hastanın adı ve aktif yatışın ID'si
+    private String yatanHastaAdiSoyadi; // Backend'de YatakServiceImpl'de doldurulacak
+    private Integer aktifYatisId;       // Backend'de YatakServiceImpl'de doldurulacak
 }

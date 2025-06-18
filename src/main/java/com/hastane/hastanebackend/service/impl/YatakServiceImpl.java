@@ -1,11 +1,16 @@
+// src/main/java/com/hastane/hastanebackend/service/impl/YatakServiceImpl.java
 package com.hastane.hastanebackend.service.impl;
 
 import com.hastane.hastanebackend.dto.YatakDTO;
 import com.hastane.hastanebackend.entity.Oda;
-import com.hastane.hastanebackend.entity.Yatak;
+import com.hastane.hastanebackend.entity.Yatak; // Yatak entity'sini import ettiğinizden emin olun
+import com.hastane.hastanebackend.entity.Yatis; // Yatis entity'sini import edin
 import com.hastane.hastanebackend.exception.ResourceNotFoundException;
 import com.hastane.hastanebackend.repository.OdaRepository;
 import com.hastane.hastanebackend.repository.YatakRepository;
+// YatisRepository'ye de ihtiyacımız olabilir, eğer yatak.getAktifYatis() her zaman dolu gelmiyorsa.
+// Ancak Yatak entity'sindeki @OneToOne(mappedBy = "yatak", fetch = FetchType.LAZY) private Yatis aktifYatis;
+// ilişkisi varsa ve doğru yönetiliyorsa, yatak üzerinden aktif yatışa ulaşabilmeliyiz.
 import com.hastane.hastanebackend.service.YatakService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +28,7 @@ public class YatakServiceImpl implements YatakService {
     private static final Logger log = LoggerFactory.getLogger(YatakServiceImpl.class);
 
     private final YatakRepository yatakRepository;
-    private final OdaRepository odaRepository; // Oda bilgisini çekmek ve doğrulamak için
+    private final OdaRepository odaRepository;
 
     @Autowired
     public YatakServiceImpl(YatakRepository yatakRepository, OdaRepository odaRepository) {
@@ -36,17 +41,38 @@ public class YatakServiceImpl implements YatakService {
         if (yatak == null) {
             return null;
         }
-        return YatakDTO.builder()
+        YatakDTO.YatakDTOBuilder builder = YatakDTO.builder()
                 .id(yatak.getId())
                 .yatakNumarasi(yatak.getYatakNumarasi())
                 .doluMu(yatak.isDoluMu())
                 .odaId(yatak.getOda().getId())
                 .odaNumarasiOdaDto(yatak.getOda().getOdaNumarasi())
-                .katAdi(yatak.getOda().getKat().getAd())
-                .build();
+                .katAdi(yatak.getOda().getKat().getAd());
+
+        // Yatak doluysa ve aktif bir yatış bilgisi varsa, DTO'ya ekle
+        if (yatak.isDoluMu()) {
+            Yatis aktifYatis = yatak.getAktifYatis(); // Yatak entity'sindeki ilişkiden aktif yatışı al
+            if (aktifYatis != null) {
+                builder.aktifYatisId(aktifYatis.getId());
+                if (aktifYatis.getHasta() != null) {
+                    builder.yatanHastaAdiSoyadi(aktifYatis.getHasta().getAd() + " " + aktifYatis.getHasta().getSoyad());
+                } else {
+                    builder.yatanHastaAdiSoyadi("Bilinmeyen Hasta (Veri Eksik)");
+                }
+            } else {
+                // Yatak dolu ama aktif yatış bilgisi entity'de yoksa (bu bir veri tutarsızlığı olabilir)
+                builder.yatanHastaAdiSoyadi("Bilinmiyor (Aktif Yatış Yok)");
+                log.warn("Yatak ID {} dolu olarak işaretlenmiş ancak ilişkili aktif yatış bilgisi bulunamadı.", yatak.getId());
+            }
+        } else {
+            builder.yatanHastaAdiSoyadi(null); // Boş yatakta yatan hasta olmaz
+            builder.aktifYatisId(null);      // Boş yatakta aktif yatış ID'si olmaz
+        }
+
+        return builder.build();
     }
 
-    // DTO'dan Entity'ye dönüşüm, Oda nesnesini ayrıca alır.
+    // DTO'dan Entity'ye dönüşüm, Oda nesnesini ayrıca alır. (Bu metot aynı kalabilir)
     private Yatak convertToEntity(YatakDTO yatakDTO, Oda oda) {
         if (yatakDTO == null) {
             return null;
@@ -54,12 +80,16 @@ public class YatakServiceImpl implements YatakService {
         Yatak yatak = new Yatak();
         yatak.setId(yatakDTO.getId()); // Güncelleme için
         yatak.setYatakNumarasi(yatakDTO.getYatakNumarasi());
-        yatak.setDoluMu(yatakDTO.getDoluMu() != null ? yatakDTO.getDoluMu() : false); // Null ise false ata
+        // Yeni yatak oluşturulurken veya güncellenirken doluMu durumu YatakDTO'dan gelir.
+        // createYatak içinde varsayılan olarak false set ediliyor, updateYatak içinde ise dokunulmuyor.
+        // updateYatakDolulukDurumu metodu bu alanı ayrıca güncelliyor.
+        yatak.setDoluMu(yatakDTO.getDoluMu() != null ? yatakDTO.getDoluMu() : false);
         yatak.setOda(oda);
         return yatak;
     }
     // --- Dönüşüm Metotları Sonu ---
 
+    // ... (getAllYataklar, getYataklarByOdaId, getYatakById metotları aynı kalacak) ...
     @Override
     @Transactional(readOnly = true)
     public List<YatakDTO> getAllYataklar() {
@@ -89,6 +119,7 @@ public class YatakServiceImpl implements YatakService {
                 .map(this::convertToDTO);
     }
 
+
     @Override
     @Transactional
     public YatakDTO createYatak(YatakDTO yatakDTO) {
@@ -99,9 +130,10 @@ public class YatakServiceImpl implements YatakService {
         if (yatakRepository.existsByOda_IdAndYatakNumarasi(oda.getId(), yatakDTO.getYatakNumarasi())) {
             throw new IllegalArgumentException("'" + oda.getOdaNumarasi() + "' numaralı odada '" + yatakDTO.getYatakNumarasi() + "' numaralı yatak zaten mevcut.");
         }
-
+        // Yeni yatak oluşturulurken doluMu durumu frontend'den YatakDTO içinde gelmeli (veya varsayılan olarak false).
+        // convertToEntity metodu yatakDTO.getDoluMu() null ise false atıyor.
         Yatak yatak = convertToEntity(yatakDTO, oda);
-        yatak.setId(null); // Yeni kayıt için ID null olmalı
+        yatak.setId(null); 
         Yatak kaydedilmisYatak = yatakRepository.save(yatak);
         log.info("Yatak başarıyla oluşturuldu. ID: {}, Numara: {}", kaydedilmisYatak.getId(), kaydedilmisYatak.getYatakNumarasi());
         return convertToDTO(kaydedilmisYatak);
@@ -113,11 +145,8 @@ public class YatakServiceImpl implements YatakService {
         log.info("Yatak ID {} güncelleniyor. Yeni Yatak No: {}", id, yatakDTO.getYatakNumarasi());
         Yatak mevcutYatak = yatakRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Güncellenecek yatak bulunamadı, ID: " + id));
-
         Oda hedefOda;
-        // Eğer DTO'da odaId belirtilmişse ve mevcut yatağın odasından farklıysa, yeni odayı al
         if (yatakDTO.getOdaId() != null && !mevcutYatak.getOda().getId().equals(yatakDTO.getOdaId())) {
-            // İş kuralı: Dolu bir yatağın odası değiştirilemez.
             if (mevcutYatak.isDoluMu()) {
                 throw new IllegalStateException("Dolu bir yatağın odası değiştirilemez. Yatak ID: " + id);
             }
@@ -125,17 +154,14 @@ public class YatakServiceImpl implements YatakService {
                     .orElseThrow(() -> new ResourceNotFoundException("Yatak için belirtilen yeni oda bulunamadı, Oda ID: " + yatakDTO.getOdaId()));
             mevcutYatak.setOda(hedefOda);
         } else {
-            hedefOda = mevcutYatak.getOda(); // Mevcut odayı kullan
+            hedefOda = mevcutYatak.getOda();
         }
 
-        // Yatak numarası değişmişse veya oda değişmişse benzersizlik kontrolü yap
         if ((yatakDTO.getYatakNumarasi() != null && !mevcutYatak.getYatakNumarasi().equalsIgnoreCase(yatakDTO.getYatakNumarasi())) ||
             (yatakDTO.getOdaId() != null && !mevcutYatak.getOda().getId().equals(yatakDTO.getOdaId()))) {
-            
             String kontrolEdilecekYatakNumarasi = (yatakDTO.getYatakNumarasi() != null) ? yatakDTO.getYatakNumarasi() : mevcutYatak.getYatakNumarasi();
-            
             Optional<Yatak> cakisanYatak = yatakRepository.findByOda_IdAndYatakNumarasi(hedefOda.getId(), kontrolEdilecekYatakNumarasi);
-            if (cakisanYatak.isPresent() && !cakisanYatak.get().getId().equals(mevcutYatak.getId())) { // Başka bir yatakla çakışıyorsa
+            if (cakisanYatak.isPresent() && !cakisanYatak.get().getId().equals(mevcutYatak.getId())) {
                  throw new IllegalArgumentException("'" + hedefOda.getOdaNumarasi() + "' numaralı odada '" + kontrolEdilecekYatakNumarasi + "' numaralı yatak zaten mevcut.");
             }
         }
@@ -143,18 +169,19 @@ public class YatakServiceImpl implements YatakService {
         if (yatakDTO.getYatakNumarasi() != null) {
             mevcutYatak.setYatakNumarasi(yatakDTO.getYatakNumarasi());
         }
-        // Doluluk durumu genellikle bu genel update metoduyla değil, özel bir metotla (updateYatakDolulukDurumu) güncellenir.
-        // Ama DTO'da geliyorsa ve izin veriliyorsa güncellenebilir.
+        // doluMu durumu burada güncellenmiyor, updateYatakDolulukDurumu metodu bu iş için var.
+        // Eğer yatakDTO.getDoluMu() dolu geliyorsa ve adminin bu yetkisi varsa, o zaman güncellenebilir,
+        // ancak YatisService ile senkronizasyon önemlidir. Şimdilik bu genel update'te doluMu'ya dokunmuyoruz.
+        // Sadece YatakDTO'dan gelen doluMu değerini, convertToEntity içindeki gibi null kontrolüyle atayabiliriz
+        // eğer yatakDTO'da doluMu değeri her zaman dolu geliyorsa.
+        // Ancak en güvenlisi, doluMu durumunu sadece updateYatakDolulukDurumu ile değiştirmek.
+        // Bu yüzden convertToEntity'deki gibi yatakDTO.getDoluMu() null değilse onu kullanırız.
         if (yatakDTO.getDoluMu() != null) {
-             // İş kuralı: Yatak doluysa ve boşaltılmaya çalışılıyorsa Yatis işlemi gerekir.
-             // Ya da yatak boşsa ve doldurulmaya çalışılıyorsa Yatis işlemi gerekir.
-             // Bu metot sadece ADMIN tarafından temel yatak bilgilerini güncellemek için kullanılmalı.
-             // Doluluk durumu Yatis servisi tarafından yönetilmeli.
-             // Şimdilik direkt güncellemeyi yoruma alıyorum, ayrı metotta yapılacak.
-             // mevcutYatak.setDoluMu(yatakDTO.getDoluMu());
-             log.warn("Yatak doluluk durumu bu genel güncelleme metoduyla değiştirilmemeli. ID: {}", id);
+            // Bu satır, YatakDTO'da doluMu gelirse onu set eder. Ancak YatisService ile çakışabilir.
+            // mevcutYatak.setDoluMu(yatakDTO.getDoluMu()); 
+            log.info("updateYatak çağrısında YatakDTO.doluMu: {} (Yatak ID: {})", yatakDTO.getDoluMu(), id);
         }
-        
+
         Yatak guncellenmisYatak = yatakRepository.save(mevcutYatak);
         log.info("Yatak başarıyla güncellendi. ID: {}, Numara: {}", guncellenmisYatak.getId(), guncellenmisYatak.getYatakNumarasi());
         return convertToDTO(guncellenmisYatak);
@@ -167,17 +194,21 @@ public class YatakServiceImpl implements YatakService {
         Yatak yatak = yatakRepository.findById(yatakId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yatak bulunamadı, ID: " + yatakId));
         
-        // İş kuralı: Yatak zaten istenen durumdaysa bir şey yapma veya hata ver.
         if (yatak.isDoluMu() == doluMu) {
             log.warn("Yatak ID {} zaten istenen doluluk durumunda ({})", yatakId, doluMu);
-            // return convertToDTO(yatak); // Veya exception fırlatılabilir.
+            // return convertToDTO(yatak); // Aynı durumda ise bir şey yapmadan dön
         }
         
-        // TODO: Eğer yatak 'dolu' yapılıyorsa, bir Yatis kaydı ile ilişkilendirilmelidir.
-        // Eğer yatak 'boş' yapılıyorsa, ilişkili Yatis kaydı sonlandırılmalıdır.
-        // Bu mantık YatisService içinde olmalı. Bu metot sadece yatağın flag'ini değiştirir.
-        // Daha gelişmiş bir sistemde bu metot YatisService tarafından çağrılabilir.
         yatak.setDoluMu(doluMu);
+        // Eğer yatak boşaltılıyorsa, ilişkili aktif yatışı da null yapmalıyız
+        // Bu, YatisService.hastaTaburcuEt içinde yapılmalı.
+        // Burada sadece yatağın flag'ini güncelliyoruz.
+        // YatisService bu metodu çağırırken yatak.setAktifYatis(null) yapabilir.
+        if (!doluMu && yatak.getAktifYatis() != null) {
+            log.info("Yatak ID {} boşaltılıyor, aktif yatış ilişkisi YatisService tarafından yönetilmeli.", yatakId);
+            // yatak.setAktifYatis(null); // Bu satır YatisService.hastaTaburcuEt içinde olmalı
+        }
+
         Yatak guncellenmisYatak = yatakRepository.save(yatak);
         log.info("Yatak ID {} doluluk durumu başarıyla güncellendi: {}", yatakId, doluMu);
         return convertToDTO(guncellenmisYatak);
@@ -190,12 +221,11 @@ public class YatakServiceImpl implements YatakService {
         Yatak yatak = yatakRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Silinecek yatak bulunamadı, ID: " + id));
 
-        // İş kuralı: Dolu bir yatak silinemez.
         if (yatak.isDoluMu()) {
             throw new IllegalStateException("Dolu bir yatak silinemez. Lütfen önce yatıştaki hastayı taburcu edin. Yatak ID: " + id);
         }
-        // TODO: Yatis entity'si eklendiğinde, yatağın aktif bir yatışla ilişkili olup olmadığı kontrol edilmeli.
-        // if (yatisRepository.existsByYatak_IdAndCikisTarihiIsNull(id)) { throw ... }
+        // TODO: Yatak silinirken ilişkili (geçmiş) yatış kayıtları ne olacak? Bu iş kuralına göre belirlenmeli.
+        // Şimdilik sadece yatağı siliyoruz.
 
         yatakRepository.delete(yatak);
         log.info("Yatak başarıyla silindi. ID: {}", id);

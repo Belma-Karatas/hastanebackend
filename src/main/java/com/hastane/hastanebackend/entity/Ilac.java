@@ -6,8 +6,8 @@ import lombok.Setter;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
-import java.util.HashSet; // Bu importu ekle veya yorum satırını kaldır
-import java.util.Set;    // Bu importu ekle veya yorum satırını kaldır
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "Ilac")
@@ -25,16 +25,18 @@ public class Ilac {
     @Column(name = "ad", nullable = false, length = 100, unique = true)
     private String ad;
 
-    // Aciklama alanı zaten kaldırılmıştı, doğru.
+    // YENİ EKLENEN ALANLAR
+    @Column(name = "barkod", length = 50) // Opsiyonel, uzunluğunu ihtiyaca göre ayarlayın
+    private String barkod;
 
-    // ReceteIlac ile olan OneToMany ilişkisi
-    // mappedBy = "ilac": ReceteIlac entity'sindeki 'ilac' alanı bu ilişkinin sahibi.
-    // fetch = FetchType.LAZY: İlişkili ReceteIlac nesneleri sadece ihtiyaç duyulduğunda yüklenir.
-    // cascade: Ilac silindiğinde ilişkili ReceteIlac kayıtlarının otomatik silinmesini istemiyoruz.
-    // Bu, veri bütünlüğü için önemlidir. Silme işlemi servis katmanında kontrol edilmelidir.
+    @Column(name = "form", length = 50) // Opsiyonel, örn: "Tablet", "Şurup", "Kapsül"
+    private String form;
+
+    @Column(name = "etken_madde", columnDefinition = "TEXT") // Opsiyonel, uzun olabilir diye TEXT
+    private String etkenMadde;
+    // YENİ EKLENEN ALANLAR SONU
+
     @OneToMany(mappedBy = "ilac", fetch = FetchType.LAZY)
     private Set<ReceteIlac> receteIlaclari = new HashSet<>();
 
-    // equals ve hashCode metotları Lombok tarafından ID üzerinden otomatik yönetilebilir
-    // veya manuel eklenebilir. Şimdilik Lombok'un varsayılan davranışına bırakıyoruz.
 }
