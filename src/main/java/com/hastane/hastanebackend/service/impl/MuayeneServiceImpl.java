@@ -47,6 +47,7 @@ public class MuayeneServiceImpl implements MuayeneService {
     @Transactional
     public MuayeneGoruntuleDTO muayeneOlustur(MuayeneOlusturDTO dto, Integer doktorKullaniciId) {
         logger.info("Muayene oluşturma isteği alındı. Doktor Kullanıcı ID: {}, Randevu ID (varsa): {}", doktorKullaniciId, dto.getRandevuId());
+        // ... (mevcut yetki ve varlık kontrolleri aynı kalacak) ...
         Kullanici aktifKullanici = kullaniciRepository.findById(doktorKullaniciId)
                 .orElseThrow(() -> {
                     logger.error("Muayene oluşturma: Aktif kullanıcı bulunamadı, ID: {}", doktorKullaniciId);
@@ -100,9 +101,22 @@ public class MuayeneServiceImpl implements MuayeneService {
 
         Muayene kaydedilmisMuayene = muayeneRepository.save(muayene);
         logger.info("Muayene başarıyla oluşturuldu. Muayene ID: {}", kaydedilmisMuayene.getId());
+
+        // **** YENİ EKLENEN KISIM: Randevu durumunu güncelle ****
+        if (kaydedilmisMuayene.getRandevu() != null) {
+            Randevu ilgiliRandevu = kaydedilmisMuayene.getRandevu();
+            if (!"TAMAMLANDI".equals(ilgiliRandevu.getDurum())) {
+                ilgiliRandevu.setDurum("TAMAMLANDI");
+                randevuRepository.save(ilgiliRandevu);
+                logger.info("Randevu ID {} durumu 'TAMAMLANDI' olarak güncellendi (Muayene oluşturuldu).", ilgiliRandevu.getId());
+            }
+        }
+        // **** YENİ EKLENEN KISIM SONU ****
+
         return convertToGoruntuleDTO(kaydedilmisMuayene);
     }
 
+    // ... (getMuayeneById, findDtoByRandevuId, getMuayenelerByHastaId, getMuayenelerByDoktorIdAndGun metotları aynı kalacak) ...
     @Override
     @Transactional(readOnly = true)
     public Optional<MuayeneGoruntuleDTO> getMuayeneById(Integer muayeneId, Integer talepEdenKullaniciId) {
@@ -111,7 +125,6 @@ public class MuayeneServiceImpl implements MuayeneService {
         Muayene muayene = muayeneRepository.findById(muayeneId)
                 .orElseThrow(() -> new ResourceNotFoundException("Muayene bulunamadı, ID: " + muayeneId));
         
-        // Yetki kontrolü doğrudan burada yapılıyor
         Kullanici talepEden = kullaniciRepository.findById(talepEdenKullaniciId)
                 .orElseThrow(() -> new ResourceNotFoundException("Talep eden kullanıcı bulunamadı: " + talepEdenKullaniciId));
 
@@ -197,6 +210,7 @@ public class MuayeneServiceImpl implements MuayeneService {
         return muayeneler.stream().map(this::convertToGoruntuleDTO).collect(Collectors.toList());
     }
 
+
     @Override
     @Transactional
     public MuayeneGoruntuleDTO muayeneGuncelle(Integer muayeneId, MuayeneOlusturDTO dto, Integer doktorKullaniciId) {
@@ -207,6 +221,7 @@ public class MuayeneServiceImpl implements MuayeneService {
                     return new ResourceNotFoundException("Güncellenecek muayene bulunamadı, ID: " + muayeneId);
                 });
 
+        // ... (mevcut yetki ve varlık kontrolleri aynı kalacak) ...
         Kullanici aktifKullanici = kullaniciRepository.findById(doktorKullaniciId)
                 .orElseThrow(() -> {
                     logger.error("Muayene güncelleme: Aktif kullanıcı bulunamadı, ID: {}", doktorKullaniciId);
@@ -228,10 +243,25 @@ public class MuayeneServiceImpl implements MuayeneService {
         
         if (dto.getHastaId() != null && !dto.getHastaId().equals(mevcutMuayene.getHasta().getId())) {
             logger.warn("Muayene güncelleme: Hasta ID'si değiştirilmeye çalışıldı. Bu işlem desteklenmiyor. Muayene ID: {}", muayeneId);
+            // throw new IllegalArgumentException("Muayene kaydındaki hasta bilgisi değiştirilemez."); // İsteğe bağlı
         }
+        // Randevu ID'si de genellikle güncellenmez.
 
         Muayene guncellenmisMuayene = muayeneRepository.save(mevcutMuayene);
         logger.info("Muayene (ID: {}) başarıyla güncellendi.", guncellenmisMuayene.getId());
+
+        // **** YENİ EKLENEN KISIM: Randevu durumunu güncelle (eğer muayene bir randevuya bağlıysa) ****
+        if (guncellenmisMuayene.getRandevu() != null) {
+            Randevu ilgiliRandevu = guncellenmisMuayene.getRandevu(); // DB'den tekrar çekmek yerine mevcut olanı kullanabiliriz.
+                                                                  // Veya randevuRepository.findById(guncellenmisMuayene.getRandevu().getId()).orElse(null);
+            if (ilgiliRandevu != null && !"TAMAMLANDI".equals(ilgiliRandevu.getDurum())) {
+                ilgiliRandevu.setDurum("TAMAMLANDI");
+                randevuRepository.save(ilgiliRandevu);
+                logger.info("Randevu ID {} durumu 'TAMAMLANDI' olarak güncellendi (Muayene güncellendi).", ilgiliRandevu.getId());
+            }
+        }
+        // **** YENİ EKLENEN KISIM SONU ****
+
         return convertToGoruntuleDTO(guncellenmisMuayene);
     }
 

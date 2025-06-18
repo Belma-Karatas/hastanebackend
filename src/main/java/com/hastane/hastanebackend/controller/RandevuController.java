@@ -2,15 +2,17 @@ package com.hastane.hastanebackend.controller;
 
 import com.hastane.hastanebackend.dto.RandevuGoruntuleDTO;
 import com.hastane.hastanebackend.dto.RandevuOlusturDTO;
-import com.hastane.hastanebackend.entity.Hasta; // Hasta entity importu
+import com.hastane.hastanebackend.entity.Hasta;
 import com.hastane.hastanebackend.entity.Kullanici;
-import com.hastane.hastanebackend.exception.ResourceNotFoundException; // ResourceNotFoundException importu
-import com.hastane.hastanebackend.repository.HastaRepository; // HastaRepository importu
+import com.hastane.hastanebackend.entity.Personel; // EKLENDİ (PersonelRepository için)
+import com.hastane.hastanebackend.exception.ResourceNotFoundException;
+import com.hastane.hastanebackend.repository.HastaRepository;
 import com.hastane.hastanebackend.repository.KullaniciRepository;
+import com.hastane.hastanebackend.repository.PersonelRepository; // EKLENDİ
 import com.hastane.hastanebackend.service.RandevuService;
 import jakarta.validation.Valid;
-import org.slf4j.Logger; // Logger importları
-import org.slf4j.LoggerFactory; // Logger importları
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,25 +30,30 @@ import java.util.Optional;
 @RequestMapping("/api/randevular")
 public class RandevuController {
 
-    private static final Logger logger = LoggerFactory.getLogger(RandevuController.class); // Logger tanımlaması
+    private static final Logger logger = LoggerFactory.getLogger(RandevuController.class);
 
     private final RandevuService randevuService;
     private final KullaniciRepository kullaniciRepository;
-    private final HastaRepository hastaRepository; // HastaRepository bağımlılığı eklendi
+    private final HastaRepository hastaRepository;
+    private final PersonelRepository personelRepository; // EKLENDİ
 
     public RandevuController(RandevuService randevuService,
                              KullaniciRepository kullaniciRepository,
-                             HastaRepository hastaRepository) { // Constructor'a eklendi
+                             HastaRepository hastaRepository,
+                             PersonelRepository personelRepository) { // personelRepository eklendi
         this.randevuService = randevuService;
         this.kullaniciRepository = kullaniciRepository;
-        this.hastaRepository = hastaRepository; // Atama yapıldı
+        this.hastaRepository = hastaRepository;
+        this.personelRepository = personelRepository; // EKLENDİ
     }
 
     private Integer getAktifKullaniciId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || authentication.getPrincipal().equals("anonymousUser")) {
             logger.warn("getAktifKullaniciId çağrıldı ancak aktif kullanıcı bulunamadı veya kimlik doğrulanmamış.");
-            throw new IllegalStateException("Aktif kullanıcı bulunamadı veya kimlik doğrulanmamış.");
+            // Daha spesifik bir exception fırlatmak daha iyi olabilir, örn: AuthenticationCredentialsNotFoundException
+            // Ancak şimdilik IllegalStateException veya ResourceNotFoundException da iş görebilir.
+            throw new ResourceNotFoundException("Bu işlem için kimlik doğrulaması gerekmektedir veya aktif kullanıcı bulunamadı.");
         }
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
         Kullanici kullanici = kullaniciRepository.findByEmail(userDetails.getUsername())
@@ -85,15 +92,12 @@ public class RandevuController {
                          .orElseGet(() -> ResponseEntity.notFound().build());
     }
     
-    // YENİ EKLENEN ENDPOINT: Giriş yapmış hastanın kendi randevularını getirir
     @GetMapping("/hasta/mevcut")
-    @PreAuthorize("hasRole('HASTA')") // Sadece HASTA rolüne sahip olanlar erişebilir
+    @PreAuthorize("hasRole('HASTA')")
     public ResponseEntity<List<RandevuGoruntuleDTO>> getMyRandevular() {
         logger.info("GET /api/randevular/hasta/mevcut çağrıldı.");
         try {
             Integer aktifKullaniciId = getAktifKullaniciId();
-            
-            // Aktif kullanıcının Hasta profilini bul
             Hasta hasta = hastaRepository.findByKullanici_Id(aktifKullaniciId)
                 .orElseThrow(() -> {
                     logger.warn("Kullanıcı ID {} için hasta profili bulunamadı.", aktifKullaniciId);
@@ -104,16 +108,33 @@ public class RandevuController {
             return ResponseEntity.ok(randevular);
         } catch (ResourceNotFoundException e) {
             logger.warn("Mevcut hastanın randevuları getirilirken kaynak bulunamadı: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null); // Veya uygun bir hata mesajı
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
         } catch (Exception e) {
             logger.error("Mevcut hastanın randevuları getirilirken beklenmedik bir hata oluştu:", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }
 
+    // DOKTORUN TÜM RANDEVULARINI GETİRMEK İÇİN YENİ ENDPOINT
+    @GetMapping("/doktor/tum")
+    @PreAuthorize("hasRole('DOKTOR')")
+    public ResponseEntity<List<RandevuGoruntuleDTO>> getDoktorunTumRandevulari(Authentication authentication) {
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        String email = userDetails.getUsername();
+        logger.info("GET /api/randevular/doktor/tum çağrıldı. Doktor email: {}", email);
+        
+        Kullanici kullanici = kullaniciRepository.findByEmail(email)
+            .orElseThrow(() -> new ResourceNotFoundException("Giriş yapmış kullanıcı bulunamadı: " + email));
+        
+        Personel doktor = personelRepository.findByKullanici_Id(kullanici.getId())
+            .orElseThrow(() -> new ResourceNotFoundException("Doktor profili bulunamadı, Kullanıcı ID: " + kullanici.getId()));
+
+        List<RandevuGoruntuleDTO> randevular = randevuService.getTumRandevularByDoktorId(doktor.getId());
+        return ResponseEntity.ok(randevular);
+    }
 
     @GetMapping("/hasta/{hastaId}")
-    @PreAuthorize("isAuthenticated()") // Yetki kontrolü serviste daha detaylı yapılabilir
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<RandevuGoruntuleDTO>> getRandevularByHastaId(@PathVariable Integer hastaId) {
         logger.debug("GET /api/randevular/hasta/{} çağrıldı.", hastaId);
         Integer talepEdenKullaniciId = getAktifKullaniciId();
@@ -122,7 +143,7 @@ public class RandevuController {
     }
 
     @GetMapping("/doktor/{doktorId}")
-    @PreAuthorize("isAuthenticated()") // Yetki kontrolü serviste daha detaylı yapılabilir
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<RandevuGoruntuleDTO>> getRandevularByDoktorIdAndGun(
             @PathVariable Integer doktorId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate gun) {
@@ -136,10 +157,12 @@ public class RandevuController {
     @PreAuthorize("hasAnyRole('DOKTOR', 'ADMIN')")
     public ResponseEntity<?> randevuDurumGuncelle(
             @PathVariable Integer randevuId,
-            @RequestParam String yeniDurum) { // DTO kullanmak daha iyi olabilir: @RequestBody RandevuDurumGuncelleDTO dto
+            @RequestParam String yeniDurum) { 
         logger.info("PUT /api/randevular/{}/durum çağrıldı. Yeni Durum: {}", randevuId, yeniDurum);
         try {
             Integer talepEdenKullaniciId = getAktifKullaniciId();
+            // Not: randevuDurumGuncelle metodu yeniDurum'u direkt String olarak alıyor, bu yüzden body'e gerek yok.
+            // Eğer body'de { "yeniDurum": "TAMAMLANDI" } gibi bir JSON bekliyorsanız @RequestBody kullanmalısınız.
             RandevuGoruntuleDTO guncellenmisRandevu = randevuService.randevuDurumGuncelle(randevuId, yeniDurum, talepEdenKullaniciId);
             logger.info("Randevu (ID: {}) durumu başarıyla '{}' olarak güncellendi.", randevuId, yeniDurum);
             return ResponseEntity.ok(guncellenmisRandevu);
@@ -153,7 +176,7 @@ public class RandevuController {
     }
 
     @PutMapping("/{randevuId}/iptal")
-    @PreAuthorize("isAuthenticated()") // Yetki serviste daha detaylı
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> randevuIptalEt(@PathVariable Integer randevuId) {
         logger.info("PUT /api/randevular/{}/iptal çağrıldı.", randevuId);
         try {
