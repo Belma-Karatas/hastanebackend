@@ -2,8 +2,8 @@ package com.hastane.hastanebackend.repository;
 
 import com.hastane.hastanebackend.entity.Yatis;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
+// import org.springframework.data.jpa.repository.Query; // Eğer özel sorgu gerekirse
+// import org.springframework.data.repository.query.Param; // Eğer özel sorgu gerekirse
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -32,7 +32,6 @@ public interface YatisRepository extends JpaRepository<Yatis, Integer> {
 
     /**
      * Belirli bir yatakta aktif (çıkış tarihi null olan) bir yatış olup olmadığını kontrol eder.
-     * Yatis tablosundaki yatak_id UNIQUE olduğu için bu genellikle tek bir sonuç döner (veya hiç).
      *
      * @param yatakId Yatak ID'si.
      * @return Aktif yatış varsa Yatis nesnesini içeren bir Optional, yoksa boş bir Optional.
@@ -63,16 +62,6 @@ public interface YatisRepository extends JpaRepository<Yatis, Integer> {
      */
     List<Yatis> findByCikisTarihiIsNullOrderByGirisTarihiDesc();
 
-    /**
-     * Bir yatağın geçmişteki tüm yatışlarını (çıkış tarihi dolu olan) listeler.
-     * Bu, Yatis tablosundaki yatak_id'nin UNIQUE olmaması durumunda daha anlamlı olurdu.
-     * Şu anki UNIQUE kısıtıyla, bir yatak için en fazla bir kayıt (aktif veya geçmiş) olabilir.
-     * Eğer yatak_id UNIQUE değilse bu sorgu kullanılabilir.
-     * @param yatakId Yatak ID'si.
-     * @return Yatağın geçmiş yatışlarının listesi.
-     */
-    // List<Yatis> findByYatak_IdAndCikisTarihiIsNotNullOrderByCikisTarihiDesc(Integer yatakId);
-
 
     /**
      * Belirli bir hastanın belirli bir yatakta aktif bir yatışı olup olmadığını kontrol eder.
@@ -82,4 +71,15 @@ public interface YatisRepository extends JpaRepository<Yatis, Integer> {
      */
     boolean existsByHasta_IdAndYatak_IdAndCikisTarihiIsNull(Integer hastaId, Integer yatakId);
 
+    // --- YENİ EKLENEN METOT ---
+    /**
+     * Belirli bir durumdaki ve henüz çıkış yapmamış (cikisTarihi null olan)
+     * yatış kayıtlarını giriş tarihine göre tersten sıralı olarak bulur.
+     * Bu metot, özellikle "YATAK BEKLIYOR" veya "AKTIF" gibi durumlardaki yatışları filtrelemek için kullanılır.
+     *
+     * @param durum Aranacak yatış durumu (örn: "AKTIF", "YATAK BEKLIYOR").
+     * @return Eşleşen ve çıkış tarihi null olan yatışların listesi.
+     */
+    List<Yatis> findByDurumAndCikisTarihiIsNullOrderByGirisTarihiDesc(String durum);
+    // --- YENİ EKLENEN METOT SONU ---
 }

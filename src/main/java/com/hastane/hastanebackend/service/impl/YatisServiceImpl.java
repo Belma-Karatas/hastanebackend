@@ -1,24 +1,24 @@
 package com.hastane.hastanebackend.service.impl;
 
-import com.hastane.hastanebackend.dto.AtanmisHemsireDTO; // Yeni DTO için import
-import com.hastane.hastanebackend.dto.HemsireAtaDTO;    // Yeni DTO için import
+import com.hastane.hastanebackend.dto.AtanmisHemsireDTO;
+import com.hastane.hastanebackend.dto.HemsireAtaDTO;
 import com.hastane.hastanebackend.dto.YatisGoruntuleDTO;
 import com.hastane.hastanebackend.dto.YatisOlusturDTO;
 import com.hastane.hastanebackend.entity.*;
 import com.hastane.hastanebackend.exception.ResourceNotFoundException;
 import com.hastane.hastanebackend.repository.*;
-import com.hastane.hastanebackend.service.YatakService;
+// import com.hastane.hastanebackend.service.YatakService; // Eğer YatakService'e özel bir metot çağırmıyorsak kaldırılabilir.
 import com.hastane.hastanebackend.service.YatisService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Autowired; // Constructor injection için zorunlu değil ama kalabilir.
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Collections; // Boş liste için
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -33,72 +33,107 @@ public class YatisServiceImpl implements YatisService {
     private final YatakRepository yatakRepository;
     private final PersonelRepository personelRepository;
     private final KullaniciRepository kullaniciRepository;
-    private final YatakService yatakService;
-    private final YatisHemsireAtamaRepository yatisHemsireAtamaRepository; // YENİ EKLENDİ
-    private final RolRepository rolRepository; // Rol kontrolü için eklendi
+    // private final YatakService yatakService; // Yorum satırına alındı, direkt YatakRepository kullanılıyor.
+    private final YatisHemsireAtamaRepository yatisHemsireAtamaRepository;
+    private final RolRepository rolRepository; // Bu alan kullanılmıyorsa kaldırılabilir.
 
-    @Autowired
+    // @Autowired // Constructor injection için zorunlu değil.
     public YatisServiceImpl(YatisRepository yatisRepository,
                             HastaRepository hastaRepository,
                             YatakRepository yatakRepository,
                             PersonelRepository personelRepository,
                             KullaniciRepository kullaniciRepository,
-                            YatakService yatakService,
-                            YatisHemsireAtamaRepository yatisHemsireAtamaRepository, // YENİ EKLENDİ
-                            RolRepository rolRepository) { // Eklendi
+                            /*YatakService yatakService,*/
+                            YatisHemsireAtamaRepository yatisHemsireAtamaRepository,
+                            RolRepository rolRepository) { // Eğer rolRepository kullanılmayacaksa buradan da kaldırın.
         this.yatisRepository = yatisRepository;
         this.hastaRepository = hastaRepository;
         this.yatakRepository = yatakRepository;
         this.personelRepository = personelRepository;
         this.kullaniciRepository = kullaniciRepository;
-        this.yatakService = yatakService;
-        this.yatisHemsireAtamaRepository = yatisHemsireAtamaRepository; // YENİ EKLENDİ
-        this.rolRepository = rolRepository; // Eklendi
+        // this.yatakService = yatakService;
+        this.yatisHemsireAtamaRepository = yatisHemsireAtamaRepository;
+        this.rolRepository = rolRepository; // Eğer kullanılmayacaksa bu satırı da kaldırın.
     }
-
-    // ... (hastaYatisiYap, hastaTaburcuEt ve diğer get metotları aynı kalacak)
-    // Önceki mesajdaki gibi olacaklar, buraya tekrar kopyalamıyorum.
 
     @Override
     @Transactional
     public YatisGoruntuleDTO hastaYatisiYap(YatisOlusturDTO dto, Integer yapanKullaniciId) {
-        log.info("Hasta yatışı yapılıyor. Hasta ID: {}, Yatak ID: {}, Yapan Kullanıcı ID: {}", dto.getHastaId(), dto.getYatakId(), yapanKullaniciId);
-        checkYatisIslemYetkisi(yapanKullaniciId, "yatış yapma", null); // Yatış için belirli bir Yatis nesnesi yok
+        log.info("Hasta yatışı yapılıyor/kararı veriliyor. Hasta ID: {}, Yatak ID (varsa): {}, Sorumlu Dr ID: {}, Yapan Kullanıcı ID: {}",
+            dto.getHastaId(), dto.getYatakId(), dto.getSorumluDoktorId(), yapanKullaniciId);
 
+        Kullanici yapanKullanici = kullaniciRepository.findById(yapanKullaniciId)
+            .orElseThrow(() -> new ResourceNotFoundException("İşlemi yapan kullanıcı bulunamadı: " + yapanKullaniciId));
+        
+        boolean isYetkili = yapanKullanici.getRoller().stream()
+            .anyMatch(rol -> "ROLE_ADMIN".equals(rol.getAd()) || 
+                             "ROLE_DOKTOR".equals(rol.getAd()) || 
+                             "ROLE_HASTA_KABUL".equals(rol.getAd()));
+        if (!isYetkili) {
+            throw new AccessDeniedException("Bu işlemi (yatış/yatış kararı) yapma yetkiniz bulunmamaktadır.");
+        }
+        
         Hasta hasta = hastaRepository.findById(dto.getHastaId())
                 .orElseThrow(() -> new ResourceNotFoundException("Hasta bulunamadı, ID: " + dto.getHastaId()));
-
-        Yatak yatak = yatakRepository.findById(dto.getYatakId())
-                .orElseThrow(() -> new ResourceNotFoundException("Yatak bulunamadı, ID: " + dto.getYatakId()));
 
         Personel sorumluDoktor = personelRepository.findById(dto.getSorumluDoktorId())
                 .orElseThrow(() -> new ResourceNotFoundException("Sorumlu doktor bulunamadı, Personel ID: " + dto.getSorumluDoktorId()));
         
         boolean isDoktorRole = sorumluDoktor.getKullanici().getRoller().stream().anyMatch(rol -> "ROLE_DOKTOR".equals(rol.getAd()));
         if(!isDoktorRole){
-             throw new IllegalArgumentException("Belirtilen personel ID ("+dto.getSorumluDoktorId()+") bir doktora ait değil.");
+             throw new IllegalArgumentException("Belirtilen sorumlu personel (ID: "+dto.getSorumluDoktorId()+") bir doktora ait değil.");
         }
 
-        Optional<Yatis> aktifYatisKontrol = yatisRepository.findByHasta_IdAndCikisTarihiIsNull(hasta.getId());
-        if (aktifYatisKontrol.isPresent()) {
-            throw new IllegalStateException("Hastanın (ID: " + hasta.getId() + ") zaten aktif bir yatışı bulunmaktadır (Yatış ID: " + aktifYatisKontrol.get().getId() + ").");
-        }
-
-        if (yatak.isDoluMu()) {
-            throw new IllegalStateException("Seçilen yatak (ID: " + yatak.getId() + ") dolu.");
+        Optional<Yatis> mevcutAktifYatis = yatisRepository.findByHasta_IdAndCikisTarihiIsNull(dto.getHastaId());
+        if (mevcutAktifYatis.isPresent()) {
+            Yatis aktifYatis = mevcutAktifYatis.get();
+            if (!"TABURCU".equalsIgnoreCase(aktifYatis.getDurum())) {
+                 throw new IllegalStateException("Hastanın (ID: " + dto.getHastaId() + ") zaten \"" + aktifYatis.getDurum() + "\" durumunda bir yatış kaydı var (Yatış ID: " + aktifYatis.getId() + ").");
+            }
         }
 
         Yatis yatis = new Yatis();
         yatis.setHasta(hasta);
-        yatis.setYatak(yatak);
         yatis.setSorumluDoktor(sorumluDoktor);
         yatis.setYatisNedeni(dto.getYatisNedeni());
 
-        Yatis kaydedilmisYatis = yatisRepository.save(yatis);
-        yatakService.updateYatakDolulukDurumu(yatak.getId(), true);
-        log.info("Hasta (ID: {}) yatağa (ID: {}) başarıyla yatırıldı. Yatış ID: {}", hasta.getId(), yatak.getId(), kaydedilmisYatis.getId());
+        if (dto.getYatakId() != null) {
+            log.info("Yatak atanarak yatış yapılıyor. Yatak ID: {}", dto.getYatakId());
+            Yatak yatak = yatakRepository.findById(dto.getYatakId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Yatak bulunamadı, ID: " + dto.getYatakId()));
 
-        return convertToGoruntuleDTO(kaydedilmisYatis);
+            if (yatak.isDoluMu()) {
+                if (yatak.getAktifYatis() == null) {
+                    log.warn("Tutarsızlık: Yatak ID {} dolu olarak işaretli ama aktif yatış bilgisi yok. Yine de yatış engelleniyor.", yatak.getId());
+                }
+                throw new IllegalStateException("Seçilen yatak (ID: " + yatak.getId() + ") dolu.");
+            }
+            yatis.setYatak(yatak);
+            yatis.setDurum("AKTIF"); 
+
+            Yatis kaydedilmisYatis = yatisRepository.save(yatis);
+
+            yatak.setDoluMu(true);
+            yatak.setAktifYatis(kaydedilmisYatis); 
+            yatakRepository.save(yatak); 
+            
+            log.info("Hasta (ID: {}) yatağa (ID: {}) başarıyla yatırıldı. Yatış ID: {}", hasta.getId(), yatak.getId(), kaydedilmisYatis.getId());
+            return convertToGoruntuleDTO(kaydedilmisYatis);
+
+        } else { 
+            log.info("Doktor tarafından yatış kararı veriliyor. Hasta ID: {}", dto.getHastaId());
+            
+            boolean isDoktorYapanKullanici = yapanKullanici.getRoller().stream().anyMatch(rol -> "ROLE_DOKTOR".equals(rol.getAd()));
+            if (!isDoktorYapanKullanici && !yapanKullanici.getRoller().stream().anyMatch(rol -> "ROLE_ADMIN".equals(rol.getAd()))) { // Admin de yatak belirtmeden yatış kararı oluşturabilir mi? Şimdilik evet.
+                 // throw new AccessDeniedException("Sadece doktorlar yatak belirtmeden yatış kararı verebilir.");
+            }
+
+            yatis.setYatak(null); 
+            yatis.setDurum("YATAK BEKLIYOR"); 
+            Yatis kaydedilmisYatis = yatisRepository.save(yatis);
+            log.info("Hastanın (ID: {}) yatış kararı (Yatış ID: {}) kaydedildi. Durum: YATAK BEKLIYOR", hasta.getId(), kaydedilmisYatis.getId());
+            return convertToGoruntuleDTO(kaydedilmisYatis);
+        }
     }
 
     @Override
@@ -107,19 +142,26 @@ public class YatisServiceImpl implements YatisService {
         log.info("Hasta taburcu ediliyor. Yatış ID: {}, Yapan Kullanıcı ID: {}", yatisId, yapanKullaniciId);
         Yatis yatis = yatisRepository.findById(yatisId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yatış kaydı bulunamadı, ID: " + yatisId));
+        
         checkYatisIslemYetkisi(yapanKullaniciId, "taburcu etme", yatis);
-
 
         if (yatis.getCikisTarihi() != null) {
             throw new IllegalStateException("Bu yatış (ID: " + yatisId + ") zaten " + yatis.getCikisTarihi() + " tarihinde taburcu edilmiş.");
         }
+        if (!"AKTIF".equalsIgnoreCase(yatis.getDurum())) { 
+            throw new IllegalStateException("Sadece 'AKTIF' durumundaki yatışlar taburcu edilebilir. Mevcut durum: " + yatis.getDurum());
+        }
 
         yatis.setCikisTarihi(LocalDateTime.now());
+        yatis.setDurum("TABURCU"); 
         Yatis guncellenmisYatis = yatisRepository.save(yatis);
 
-        if (guncellenmisYatis.getYatak() != null) {
-            yatakService.updateYatakDolulukDurumu(guncellenmisYatis.getYatak().getId(), false);
-            log.info("Hasta (ID: {}) yataktan (ID: {}) başarıyla taburcu edildi. Yatış ID: {}", guncellenmisYatis.getHasta().getId(), guncellenmisYatis.getYatak().getId(), guncellenmisYatis.getId());
+        Yatak yatak = guncellenmisYatis.getYatak(); 
+        if (yatak != null) {
+            yatak.setDoluMu(false);
+            yatak.setAktifYatis(null); 
+            yatakRepository.save(yatak); 
+            log.info("Hasta (ID: {}) yataktan (ID: {}) başarıyla taburcu edildi. Yatış ID: {}", guncellenmisYatis.getHasta().getId(), yatak.getId(), guncellenmisYatis.getId());
         } else {
              log.warn("Taburcu edilen yatışın (ID: {}) bir yatakla ilişkisi bulunamadı. Yatak durumu güncellenemedi.", yatisId);
         }
@@ -140,7 +182,6 @@ public class YatisServiceImpl implements YatisService {
     @Override
     @Transactional(readOnly = true)
     public List<YatisGoruntuleDTO> getTumYatislarByHastaId(Integer hastaId, Integer talepEdenKullaniciId) {
-        // ... (Bu metot aynı kalacak, yetki kontrolü içinde)
         log.debug("getTumYatislarByHastaId çağrıldı. Hasta ID: {}, Talep Eden Kullanıcı ID: {}", hastaId, talepEdenKullaniciId);
         Kullanici talepEden = kullaniciRepository.findById(talepEdenKullaniciId)
                 .orElseThrow(() -> new ResourceNotFoundException("Talep eden kullanıcı bulunamadı."));
@@ -160,21 +201,22 @@ public class YatisServiceImpl implements YatisService {
     @Override
     @Transactional(readOnly = true)
     public Optional<YatisGoruntuleDTO> getAktifYatisByHastaId(Integer hastaId, Integer talepEdenKullaniciId) {
-        // ... (Bu metot aynı kalacak, yetki kontrolü içinde)
          log.debug("getAktifYatisByHastaId çağrıldı. Hasta ID: {}, Talep Eden Kullanıcı ID: {}", hastaId, talepEdenKullaniciId);
         return yatisRepository.findByHasta_IdAndCikisTarihiIsNull(hastaId)
                 .map(yatis -> {
-                    checkYatisGoruntulemeYetkisi(yatis, talepEdenKullaniciId);
-                    return convertToGoruntuleDTO(yatis);
-                });
+                    if ("AKTIF".equalsIgnoreCase(yatis.getDurum()) || "YATAK BEKLIYOR".equalsIgnoreCase(yatis.getDurum())) {
+                        checkYatisGoruntulemeYetkisi(yatis, talepEdenKullaniciId);
+                        return convertToGoruntuleDTO(yatis);
+                    }
+                    return null;
+                }).filter(java.util.Objects::nonNull);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<YatisGoruntuleDTO> getAktifYatisByYatakId(Integer yatakId, Integer talepEdenKullaniciId) {
-        // ... (Bu metot aynı kalacak, yetki kontrolü içinde)
         log.debug("getAktifYatisByYatakId çağrıldı. Yatak ID: {}, Talep Eden Kullanıcı ID: {}", yatakId, talepEdenKullaniciId);
-        return yatisRepository.findByYatak_IdAndCikisTarihiIsNull(yatakId)
+        return yatisRepository.findByYatak_IdAndCikisTarihiIsNull(yatakId) 
                 .map(yatis -> {
                     checkYatisGoruntulemeYetkisi(yatis, talepEdenKullaniciId);
                     return convertToGoruntuleDTO(yatis);
@@ -184,22 +226,67 @@ public class YatisServiceImpl implements YatisService {
     @Override
     @Transactional(readOnly = true)
     public List<YatisGoruntuleDTO> getTumAktifYatislar(Integer talepEdenKullaniciId) {
-        // ... (Bu metot aynı kalacak, yetki kontrolü içinde)
         log.debug("getTumAktifYatislar çağrıldı. Talep Eden Kullanıcı ID: {}", talepEdenKullaniciId);
         checkGenelListeGoruntulemeYetkisi(talepEdenKullaniciId, "tüm aktif yatışları");
 
-        return yatisRepository.findByCikisTarihiIsNullOrderByGirisTarihiDesc().stream()
+        return yatisRepository.findByDurumAndCikisTarihiIsNullOrderByGirisTarihiDesc("AKTIF").stream()
                 .map(this::convertToGoruntuleDTO)
                 .collect(Collectors.toList());
     }
 
+    // --- YENİ METOT IMPLEMENTASYONLARI ---
+    @Override
+    @Transactional(readOnly = true)
+    public List<YatisGoruntuleDTO> getTumYatislarByDurum(String durum, Integer talepEdenKullaniciId) {
+        log.debug("{} durumundaki tüm yatışlar getiriliyor. Talep Eden ID: {}", durum, talepEdenKullaniciId);
+        checkGenelListeGoruntulemeYetkisi(talepEdenKullaniciId, durum + " durumundaki yatışları");
+        return yatisRepository.findByDurumAndCikisTarihiIsNullOrderByGirisTarihiDesc(durum.toUpperCase())
+                .stream()
+                .map(this::convertToGoruntuleDTO)
+                .collect(Collectors.toList());
+    }
 
-    // --- YENİ EKLENEN METOTLAR ---
+    @Override
+    @Transactional
+    public YatisGoruntuleDTO yatakAta(Integer yatisId, Integer yatakId, Integer yapanKullaniciId) {
+        log.info("Yatış ID {} için Yatak ID {} atanıyor. Yapan Kullanıcı ID: {}", yatisId, yatakId, yapanKullaniciId);
+        checkAdminYetkisi(yapanKullaniciId, "yatışa yatak atama");
+
+        Yatis yatis = yatisRepository.findById(yatisId)
+            .orElseThrow(() -> new ResourceNotFoundException("Yatak atanacak yatış kaydı bulunamadı: " + yatisId));
+
+        if (yatis.getYatak() != null) {
+            throw new IllegalStateException("Bu yatışa (ID: " + yatisId + ") zaten bir yatak (ID: " + yatis.getYatak().getId() + ") atanmış.");
+        }
+        if (!"YATAK BEKLIYOR".equalsIgnoreCase(yatis.getDurum())) {
+             throw new IllegalStateException("Sadece 'YATAK BEKLIYOR' durumundaki yatışlara yatak atanabilir. Mevcut durum: " + yatis.getDurum());
+        }
+
+        Yatak yatak = yatakRepository.findById(yatakId)
+            .orElseThrow(() -> new ResourceNotFoundException("Atanacak yatak bulunamadı: " + yatakId));
+
+        if (yatak.isDoluMu()) {
+            throw new IllegalStateException("Seçilen yatak (ID: " + yatak.getId() + ") dolu.");
+        }
+
+        yatis.setYatak(yatak);
+        yatis.setDurum("AKTIF"); 
+        Yatis guncellenmisYatis = yatisRepository.save(yatis);
+
+        yatak.setDoluMu(true);
+        yatak.setAktifYatis(guncellenmisYatis);
+        yatakRepository.save(yatak);
+
+        log.info("Yatış ID {} için Yatak ID {} başarıyla atandı. Yatış durumu 'AKTIF' yapıldı.", yatisId, yatakId);
+        return convertToGoruntuleDTO(guncellenmisYatis);
+    }
+    // --- YENİ METOT IMPLEMENTASYONLARI SONU ---
+
     @Override
     @Transactional
     public YatisGoruntuleDTO hemsireAta(Integer yatisId, HemsireAtaDTO hemsireAtaDTO, Integer yapanKullaniciId) {
         log.info("Yatış ID {} için hemşire {} atanıyor. Yapan Kullanıcı ID: {}", yatisId, hemsireAtaDTO.getHemsirePersonelId(), yapanKullaniciId);
-        checkAdminYetkisi(yapanKullaniciId, "hemşire atama"); // Sadece ADMIN yapabilir
+        checkAdminYetkisi(yapanKullaniciId, "hemşire atama"); 
 
         Yatis yatis = yatisRepository.findById(yatisId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yatış kaydı bulunamadı, ID: " + yatisId));
@@ -207,7 +294,6 @@ public class YatisServiceImpl implements YatisService {
         Personel hemsire = personelRepository.findById(hemsireAtaDTO.getHemsirePersonelId())
                 .orElseThrow(() -> new ResourceNotFoundException("Hemşire personel bulunamadı, ID: " + hemsireAtaDTO.getHemsirePersonelId()));
 
-        // Atanacak personelin HEMSIRE rolüne sahip olup olmadığını kontrol et
         boolean isHemsireRole = hemsire.getKullanici().getRoller().stream()
                                      .anyMatch(rol -> "ROLE_HEMSIRE".equals(rol.getAd()));
         if (!isHemsireRole) {
@@ -221,20 +307,19 @@ public class YatisServiceImpl implements YatisService {
         YatisHemsireAtama atama = new YatisHemsireAtama();
         atama.setYatis(yatis);
         atama.setHemsire(hemsire);
-        // atama.setAtamaTarihi(); // @CreationTimestamp ile otomatik
 
-        yatis.addHemsireAtama(atama); // Entity'deki yardımcı metot
-        yatisRepository.save(yatis); // Cascade ile YatisHemsireAtama da kaydedilir.
+        yatis.addHemsireAtama(atama); 
+        yatisRepository.save(yatis);
         log.info("Hemşire (Personel ID: {}) yatışa (ID: {}) başarıyla atandı.", hemsire.getId(), yatisId);
 
-        return convertToGoruntuleDTO(yatis); // Güncellenmiş yatış DTO'sunu dön
+        return convertToGoruntuleDTO(yatis);
     }
 
     @Override
     @Transactional
     public YatisGoruntuleDTO hemsireAtamasiniKaldir(Integer yatisId, Integer yatisHemsireAtamaId, Integer yapanKullaniciId) {
         log.info("Yatış ID {} için hemşire ataması (ID: {}) kaldırılıyor. Yapan Kullanıcı ID: {}", yatisId, yatisHemsireAtamaId, yapanKullaniciId);
-        checkAdminYetkisi(yapanKullaniciId, "hemşire atamasını kaldırma"); // Sadece ADMIN yapabilir
+        checkAdminYetkisi(yapanKullaniciId, "hemşire atamasını kaldırma"); 
 
         Yatis yatis = yatisRepository.findById(yatisId)
                 .orElseThrow(() -> new ResourceNotFoundException("Yatış kaydı bulunamadı, ID: " + yatisId));
@@ -246,19 +331,13 @@ public class YatisServiceImpl implements YatisService {
             throw new IllegalArgumentException("Kaldırılmak istenen hemşire ataması (ID: " + yatisHemsireAtamaId + ") bu yatışa (ID: " + yatisId + ") ait değil.");
         }
 
-        yatis.removeHemsireAtama(atama); // Entity'deki yardımcı metot
-        // orphanRemoval=true olduğu için YatisHemsireAtama kaydı Yatis kaydedildiğinde DB'den silinir.
-        // Direkt yatisHemsireAtamaRepository.delete(atama); da çağrılabilir,
-        // ama koleksiyondan çıkarmak daha JPA-vari bir yoldur.
+        yatis.removeHemsireAtama(atama); 
         yatisRepository.save(yatis);
-        // veya doğrudan: yatisHemsireAtamaRepository.delete(atama);
         log.info("Hemşire ataması (ID: {}) yatıştan (ID: {}) başarıyla kaldırıldı.", yatisHemsireAtamaId, yatisId);
 
-        return convertToGoruntuleDTO(yatis); // Güncellenmiş yatış DTO'sunu dön
+        return convertToGoruntuleDTO(yatis);
     }
 
-
-    // --- Helper Metotlar ---
     private YatisGoruntuleDTO convertToGoruntuleDTO(Yatis yatis) {
         if (yatis == null) return null;
 
@@ -281,27 +360,26 @@ public class YatisServiceImpl implements YatisService {
             hemsireDTOList = Collections.emptyList();
         }
 
-
         return YatisGoruntuleDTO.builder()
                 .id(yatis.getId())
                 .hastaId(yatis.getHasta().getId())
                 .hastaAdiSoyadi(yatis.getHasta().getAd() + " " + yatis.getHasta().getSoyad())
                 .hastaTcKimlikNo(yatis.getHasta().getTcKimlikNo())
-                .yatakId(yatis.getYatak().getId())
-                .yatakNumarasi(yatis.getYatak().getYatakNumarasi())
-                .odaNumarasi(yatis.getYatak().getOda().getOdaNumarasi())
-                .katAdi(yatis.getYatak().getOda().getKat().getAd())
+                .yatakId(yatis.getYatak() != null ? yatis.getYatak().getId() : null)
+                .yatakNumarasi(yatis.getYatak() != null ? yatis.getYatak().getYatakNumarasi() : "Atanmadı")
+                .odaNumarasi(yatis.getYatak() != null ? yatis.getYatak().getOda().getOdaNumarasi() : "-")
+                .katAdi(yatis.getYatak() != null ? yatis.getYatak().getOda().getKat().getAd() : "-")
                 .sorumluDoktorId(yatis.getSorumluDoktor().getId())
                 .sorumluDoktorAdiSoyadi(yatis.getSorumluDoktor().getAd() + " " + yatis.getSorumluDoktor().getSoyad())
                 .sorumluDoktorBransAdi(doktorBransAdi)
                 .girisTarihi(yatis.getGirisTarihi())
                 .cikisTarihi(yatis.getCikisTarihi())
                 .yatisNedeni(yatis.getYatisNedeni())
-                .hemsireler(hemsireDTOList) // YENİ EKLENDİ
+                // .durum(yatis.getDurum()) // DTO'ya durum alanı eklenebilir
+                .hemsireler(hemsireDTOList)
                 .build();
     }
 
-    // Yetki kontrol metotları (ihtiyaca göre detaylandırılabilir)
     private void checkAdminYetkisi(Integer yapanKullaniciId, String islemTuru) {
         Kullanici yapanKullanici = kullaniciRepository.findById(yapanKullaniciId)
             .orElseThrow(() -> new ResourceNotFoundException("İşlemi yapan kullanıcı bulunamadı."));
@@ -319,17 +397,14 @@ public class YatisServiceImpl implements YatisService {
             .anyMatch(rol -> rol.getAd().equals("ROLE_ADMIN") || 
                              rol.getAd().equals("ROLE_DOKTOR") || 
                              rol.getAd().equals("ROLE_HEMSIRE") ||
-                             rol.getAd().equals("ROLE_HASTA_KABUL")); // Hasta kabul de yatış yapabilir
+                             rol.getAd().equals("ROLE_HASTA_KABUL")); 
         
         if (!yetkili) {
             throw new AccessDeniedException("Kullanıcının '" + islemTuru + "' işlemi için yetkisi yok.");
         }
-        // Ekstra kontroller: örn, doktor sadece kendi hastasının yatışını/taburcusunu yapabilir vb.
-        // Bu yatisContext üzerinden yapılabilir. Şimdilik genel rol kontrolü.
     }
     
     private void checkYatisGoruntulemeYetkisi(Yatis yatis, Integer talepEdenKullaniciId) {
-        // ... (Bu metot aynı kalabilir veya detaylandırılabilir)
         if (yatis == null) return;
 
         Kullanici talepEden = kullaniciRepository.findById(talepEdenKullaniciId)
@@ -339,7 +414,6 @@ public class YatisServiceImpl implements YatisService {
         boolean isIlgiliHasta = yatis.getHasta().getKullanici() != null && yatis.getHasta().getKullanici().getId().equals(talepEdenKullaniciId);
         boolean isSorumluDoktor = yatis.getSorumluDoktor().getKullanici() != null && yatis.getSorumluDoktor().getKullanici().getId().equals(talepEdenKullaniciId);
         
-        // Yatışa atanmış hemşireler de görebilir mi?
         boolean isAtanmisHemsire = false;
         if (yatis.getHemsireAtamalari() != null) {
             isAtanmisHemsire = yatis.getHemsireAtamalari().stream()
@@ -353,7 +427,6 @@ public class YatisServiceImpl implements YatisService {
     }
 
     private void checkGenelListeGoruntulemeYetkisi(Integer talepEdenKullaniciId, String listeTuru) {
-        // ... (Bu metot aynı kalabilir veya detaylandırılabilir)
         Kullanici talepEden = kullaniciRepository.findById(talepEdenKullaniciId)
             .orElseThrow(() -> new ResourceNotFoundException("Talep eden kullanıcı bulunamadı."));
         boolean yetkili = talepEden.getRoller().stream()

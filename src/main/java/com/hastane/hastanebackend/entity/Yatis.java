@@ -19,7 +19,6 @@ import java.util.Set;
 @AllArgsConstructor
 public class Yatis {
 
-    // ... (id, hasta, yatak, sorumluDoktor, girisTarihi, cikisTarihi, yatisNedeni alanları aynı)
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "yatis_id")
@@ -29,9 +28,11 @@ public class Yatis {
     @JoinColumn(name = "hasta_id", nullable = false)
     private Hasta hasta;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "yatak_id", nullable = false, unique = true)
+    // --- DEĞİŞİKLİK BURADA ---
+    @ManyToOne(fetch = FetchType.LAZY) // Yatak null olabilir başlangıçta
+    @JoinColumn(name = "yatak_id", nullable = true, unique = false) // unique = true kaldırıldı, nullable = true oldu
     private Yatak yatak;
+    // --- DEĞİŞİKLİK SONU ---
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sorumlu_doktor_id", nullable = false)
@@ -48,13 +49,14 @@ public class Yatis {
     @Column(name = "yatis_nedeni", columnDefinition = "TEXT")
     private String yatisNedeni;
 
-    // YENİ EKLENEN KISIM: Yatis'ten YatisHemsireAtama'ya OneToMany ilişki
-    // Bir yatışa birden fazla hemşire atanabilir.
-    // Yatış silindiğinde, ilişkili atama kayıtları da silinmelidir (cascade = CascadeType.ALL).
+    // --- YENİ ALAN ---
+    @Column(name = "durum", nullable = false, length = 50)
+    private String durum = "YATAK BEKLIYOR"; // Varsayılan durum
+    // --- YENİ ALAN SONU ---
+
     @OneToMany(mappedBy = "yatis", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     private Set<YatisHemsireAtama> hemsireAtamalari = new HashSet<>();
 
-    // Yardımcı metotlar (opsiyonel ama iyi pratiktir)
     public void addHemsireAtama(YatisHemsireAtama atama) {
         hemsireAtamalari.add(atama);
         atama.setYatis(this);

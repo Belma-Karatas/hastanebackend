@@ -1,6 +1,6 @@
 package com.hastane.hastanebackend.controller;
 
-import com.hastane.hastanebackend.dto.HemsireAtaDTO; // YENİ IMPORT
+import com.hastane.hastanebackend.dto.HemsireAtaDTO;
 import com.hastane.hastanebackend.dto.YatisGoruntuleDTO;
 import com.hastane.hastanebackend.dto.YatisOlusturDTO;
 import com.hastane.hastanebackend.entity.Kullanici;
@@ -19,8 +19,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
-
+import java.util.Collections; // Bu satırı ekleyin
 import java.util.List;
+import java.util.Map; // Yatak atama için eklendi
 import java.util.Optional;
 
 @RestController
@@ -29,7 +30,7 @@ public class YatisController {
 
     private static final Logger log = LoggerFactory.getLogger(YatisController.class);
     private final YatisService yatisService;
-    private final KullaniciRepository kullaniciRepository;
+    private final KullaniciRepository kullaniciRepository; // getAktifKullaniciId için
 
     public YatisController(YatisService yatisService, KullaniciRepository kullaniciRepository) {
         this.yatisService = yatisService;
@@ -39,43 +40,43 @@ public class YatisController {
     private Integer getAktifKullaniciId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || !(authentication.getPrincipal() instanceof UserDetails)) {
-            throw new IllegalStateException("Bu işlem için kimlik doğrulaması gerekmektedir.");
+            // Bu durum normalde JwtAuthenticationFilter tarafından yakalanır,
+            // ama bir güvenlik katmanı olarak burada da kontrol etmek iyi olabilir.
+            // Veya direkt null dönebiliriz, servis katmanı bu durumu ele alabilir.
+            // Şimdilik exception fırlatıyoruz.
+            throw new IllegalStateException("Aktif kullanıcı oturumu bulunamadı veya kimlik doğrulaması geçersiz.");
         }
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
         Kullanici kullanici = kullaniciRepository.findByEmail(userDetails.getUsername())
-                .orElseThrow(() -> new RuntimeException("Aktif kullanıcı bilgileri alınamadı. Email: " + userDetails.getUsername()));
+                .orElseThrow(() -> new ResourceNotFoundException("Aktif kullanıcı veritabanında bulunamadı. Email: " + userDetails.getUsername()));
         return kullanici.getId();
     }
 
-    // ... (hastaYatisiYap, hastaTaburcuEt ve diğer GET endpoint'leri aynı kalacak)
-    // Önceki mesajdaki gibi olacaklar, buraya tekrar kopyalamıyorum.
-
     @PostMapping("/yatir")
-    @PreAuthorize("hasAnyRole('ADMIN', 'HASTA_KABUL', 'DOKTOR', 'HEMSIRE')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'HASTA_KABUL', 'DOKTOR', 'HEMSIRE')") // Doktor da artık yatış kararı verebilir
     public ResponseEntity<?> hastaYatisiYap(@Valid @RequestBody YatisOlusturDTO yatisOlusturDTO) {
-        // ... (içerik aynı)
-        log.info("POST /api/yatislar/yatir çağrıldı. Hasta ID: {}", yatisOlusturDTO.getHastaId());
+        log.info("POST /api/yatislar/yatir çağrıldı. Hasta ID: {}, Yatak ID (varsa): {}", 
+            yatisOlusturDTO.getHastaId(), yatisOlusturDTO.getYatakId());
         try {
-            Integer yapanKullaniciId = getAktifKullaniciId();
+            Integer yapanKullaniciId = getAktifKullaniciId(); // İşlemi yapan kullanıcıyı al
             YatisGoruntuleDTO yeniYatis = yatisService.hastaYatisiYap(yatisOlusturDTO, yapanKullaniciId);
-            log.info("Hasta yatışı başarıyla oluşturuldu. Yatış ID: {}", yeniYatis.getId());
+            log.info("Hasta yatışı/kararı başarıyla oluşturuldu/işlendi. Yatış ID: {}", yeniYatis.getId());
             return new ResponseEntity<>(yeniYatis, HttpStatus.CREATED);
         } catch (ResourceNotFoundException | IllegalArgumentException | IllegalStateException e) {
-            log.warn("Hasta yatışı oluşturma hatası: {}", e.getMessage());
+            log.warn("Hasta yatışı/kararı oluşturma hatası: {}", e.getMessage());
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (AccessDeniedException e) {
-            log.warn("Hasta yatışı oluşturma yetki hatası: {}", e.getMessage());
+            log.warn("Hasta yatışı/kararı oluşturma yetki hatası: {}", e.getMessage());
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
         } catch (Exception e) {
-            log.error("Hasta yatışı oluşturulurken beklenmedik bir hata oluştu:", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Hasta yatışı oluşturulurken sunucu hatası oluştu.");
+            log.error("Hasta yatışı/kararı oluşturulurken beklenmedik bir hata oluştu:", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Hasta yatışı/kararı oluşturulurken sunucu hatası oluştu.");
         }
     }
 
     @PutMapping("/{yatisId}/taburcu")
     @PreAuthorize("hasAnyRole('ADMIN', 'DOKTOR', 'HEMSIRE')")
     public ResponseEntity<?> hastaTaburcuEt(@PathVariable Integer yatisId) {
-        // ... (içerik aynı)
         log.info("PUT /api/yatislar/{}/taburcu çağrıldı", yatisId);
         try {
             Integer yapanKullaniciId = getAktifKullaniciId();
@@ -97,7 +98,6 @@ public class YatisController {
     @GetMapping("/{yatisId}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getYatisById(@PathVariable Integer yatisId) {
-        // ... (içerik aynı)
         log.info("GET /api/yatislar/{} çağrıldı", yatisId);
         try {
             Integer talepEdenKullaniciId = getAktifKullaniciId();
@@ -116,7 +116,6 @@ public class YatisController {
     @GetMapping("/hasta/{hastaId}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getTumYatislarByHastaId(@PathVariable Integer hastaId) {
-        // ... (içerik aynı)
         log.info("GET /api/yatislar/hasta/{} çağrıldı", hastaId);
          try {
             Integer talepEdenKullaniciId = getAktifKullaniciId();
@@ -134,7 +133,6 @@ public class YatisController {
     @GetMapping("/hasta/{hastaId}/aktif")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getAktifYatisByHastaId(@PathVariable Integer hastaId) {
-        // ... (içerik aynı)
         log.info("GET /api/yatislar/hasta/{}/aktif çağrıldı", hastaId);
         try {
             Integer talepEdenKullaniciId = getAktifKullaniciId();
@@ -144,7 +142,11 @@ public class YatisController {
         } catch (AccessDeniedException e) {
             log.warn("Hastanın (ID: {}) aktif yatışını görüntüleme yetki hatası: {}", hastaId, e.getMessage());
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
-        } catch (Exception e) {
+        } catch (ResourceNotFoundException e) { // Servis katmanından bu hata gelebilir
+            log.warn("Aktif yatış bulunamadı (Hasta ID: {}): {}", hastaId, e.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+        }
+         catch (Exception e) {
             log.error("Hastanın (ID: {}) aktif yatışı getirilirken beklenmedik bir hata oluştu:", hastaId, e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Aktif yatış bilgisi getirilirken sunucu hatası oluştu.");
         }
@@ -153,7 +155,6 @@ public class YatisController {
     @GetMapping("/yatak/{yatakId}/aktif")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getAktifYatisByYatakId(@PathVariable Integer yatakId) {
-        // ... (içerik aynı)
         log.info("GET /api/yatislar/yatak/{}/aktif çağrıldı", yatakId);
         try {
             Integer talepEdenKullaniciId = getAktifKullaniciId();
@@ -172,7 +173,6 @@ public class YatisController {
     @GetMapping("/aktif")
     @PreAuthorize("hasAnyRole('ADMIN', 'YONETICI', 'HASTA_KABUL', 'DOKTOR', 'HEMSIRE')")
     public ResponseEntity<?> getTumAktifYatislar() {
-        // ... (içerik aynı)
         log.info("GET /api/yatislar/aktif çağrıldı");
         try {
             Integer talepEdenKullaniciId = getAktifKullaniciId();
@@ -187,9 +187,52 @@ public class YatisController {
         }
     }
 
-    // --- YENİ EKLENEN ENDPOINT'LER ---
+    // --- YENİ ENDPOINT: YATAK BEKLEYEN YATIŞLARI LİSTELEME (Admin için) ---
+    @GetMapping("/yatak-bekleyenler")
+    @PreAuthorize("hasRole('ADMIN')") // Veya 'HASTA_KABUL' gibi ilgili roller
+    public ResponseEntity<List<YatisGoruntuleDTO>> getYatakBekleyenYatislar() {
+        log.info("GET /api/yatislar/yatak-bekleyenler çağrıldı");
+        try {
+            Integer talepEdenKullaniciId = getAktifKullaniciId();
+            List<YatisGoruntuleDTO> yatislar = yatisService.getTumYatislarByDurum("YATAK BEKLIYOR", talepEdenKullaniciId);
+            return ResponseEntity.ok(yatislar);
+        } catch (AccessDeniedException e) {
+            log.warn("Yatak bekleyen yatışları listeleme yetki hatası: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Collections.emptyList()); // Veya hata mesajı
+        } catch (Exception e) {
+            log.error("Yatak bekleyen yatışlar listelenirken beklenmedik bir hata oluştu:", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Collections.emptyList()); // Veya hata mesajı
+        }
+    }
+
+    // --- YENİ ENDPOINT: YATIŞA YATAK ATAMA (Admin için) ---
+    @PutMapping("/{yatisId}/yatak-ata")
+    @PreAuthorize("hasRole('ADMIN')") // Veya 'HASTA_KABUL' gibi ilgili roller
+    public ResponseEntity<?> yatakAta(@PathVariable Integer yatisId, @RequestBody Map<String, Integer> payload) {
+        Integer yatakId = payload.get("yatakId");
+        log.info("PUT /api/yatislar/{}/yatak-ata çağrıldı. Yatak ID: {}", yatisId, yatakId);
+        if (yatakId == null) {
+            log.warn("Yatak atama isteğinde yatakId bulunamadı.");
+            return ResponseEntity.badRequest().body("Yatak ID'si gereklidir.");
+        }
+        try {
+            Integer yapanKullaniciId = getAktifKullaniciId();
+            YatisGoruntuleDTO guncellenmisYatis = yatisService.yatakAta(yatisId, yatakId, yapanKullaniciId);
+            return ResponseEntity.ok(guncellenmisYatis);
+        } catch (ResourceNotFoundException | IllegalArgumentException | IllegalStateException e) {
+            log.warn("Yatışa yatak atama hatası: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (AccessDeniedException e) {
+            log.warn("Yatışa yatak atama yetki hatası: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+        } catch (Exception e) {
+            log.error("Yatışa yatak atanırken beklenmedik bir hata oluştu (Yatış ID: {}):", yatisId, e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Yatışa yatak atanırken sunucu hatası oluştu.");
+        }
+    }
+
     @PostMapping("/{yatisId}/hemsireler")
-    @PreAuthorize("hasRole('ADMIN')") // Senin isteğin üzerine sadece ADMIN
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> hemsireAta(
             @PathVariable Integer yatisId,
             @Valid @RequestBody HemsireAtaDTO hemsireAtaDTO) {
@@ -211,7 +254,7 @@ public class YatisController {
     }
 
     @DeleteMapping("/{yatisId}/hemsireler/{yatisHemsireAtamaId}")
-    @PreAuthorize("hasRole('ADMIN')") // Senin isteğin üzerine sadece ADMIN
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> hemsireAtamasiniKaldir(
             @PathVariable Integer yatisId,
             @PathVariable Integer yatisHemsireAtamaId) {

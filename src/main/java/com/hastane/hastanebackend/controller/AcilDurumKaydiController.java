@@ -22,12 +22,13 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.ArrayList; // Eklendi
+import java.util.Comparator; // Eklendi
 import java.util.List;
 import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/acildurumkayitlari")
-// @CrossOrigin(...)
 public class AcilDurumKaydiController {
 
     private static final Logger log = LoggerFactory.getLogger(AcilDurumKaydiController.class);
@@ -51,7 +52,7 @@ public class AcilDurumKaydiController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('HEMSIRE')") // Sadece Hemşire yeni acil durum kaydı oluşturabilir
+    @PreAuthorize("hasRole('HEMSIRE')")
     public ResponseEntity<?> createAcilDurumKaydi(@Valid @RequestBody AcilDurumKaydiOlusturDTO dto) {
         try {
             Integer tetikleyenHemsireKullaniciId = getAktifKullaniciId();
@@ -71,7 +72,7 @@ public class AcilDurumKaydiController {
     }
 
     @PutMapping("/{kayitId}/durum")
-    @PreAuthorize("hasAnyRole('ADMIN', 'DOKTOR', 'HEMSIRE')") // Yetkili personel durumu güncelleyebilir
+    @PreAuthorize("hasAnyRole('ADMIN', 'DOKTOR', 'HEMSIRE')")
     public ResponseEntity<?> updateAcilDurumKaydiDurumu(
             @PathVariable Integer kayitId,
             @Valid @RequestBody AcilDurumKaydiGuncelleDTO guncelleDTO) {
@@ -93,7 +94,7 @@ public class AcilDurumKaydiController {
     }
 
     @GetMapping("/{kayitId}")
-    @PreAuthorize("isAuthenticated()") // Yetki kontrolü serviste
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getAcilDurumKaydiById(@PathVariable Integer kayitId) {
         try {
             Integer talepEdenKullaniciId = getAktifKullaniciId();
@@ -111,7 +112,7 @@ public class AcilDurumKaydiController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'YONETICI', 'DOKTOR', 'HEMSIRE')") // Yetkili roller listeyi görebilir
+    @PreAuthorize("hasAnyRole('ADMIN', 'YONETICI', 'DOKTOR', 'HEMSIRE')")
     public ResponseEntity<?> getAllOrFilteredAcilDurumKayitlari(
             @RequestParam(required = false) String durum,
             @RequestParam(required = false) Integer hastaId,
@@ -139,4 +140,30 @@ public class AcilDurumKaydiController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Acil durum kayıtları listelenirken sunucu hatası.");
         }
     }
+
+    // --- YENİ ENDPOINT (Doktor Dashboard'u için) ---
+    @GetMapping("/aktif-ve-mudahale")
+    @PreAuthorize("hasRole('DOKTOR')")
+    public ResponseEntity<?> getAktifVeMudahaleEdilenAcilDurumKayitlari() {
+        log.info("GET /api/acildurumkayitlari/aktif-ve-mudahale çağrıldı (Doktor için)");
+        try {
+            Integer talepEdenKullaniciId = getAktifKullaniciId();
+            List<AcilDurumKaydiGoruntuleDTO> aktifKayitlar = acilDurumKaydiService.getAcilDurumKayitlariByDurum("AKTIF", talepEdenKullaniciId);
+            List<AcilDurumKaydiGoruntuleDTO> mudahaleKayitlari = acilDurumKaydiService.getAcilDurumKayitlariByDurum("MÜDAHALE EDİLİYOR", talepEdenKullaniciId);
+            
+            List<AcilDurumKaydiGoruntuleDTO> birlesikListe = new ArrayList<>(aktifKayitlar);
+            birlesikListe.addAll(mudahaleKayitlari);
+            
+            birlesikListe.sort(Comparator.comparing(AcilDurumKaydiGoruntuleDTO::getOlayZamani, Comparator.nullsLast(Comparator.reverseOrder())));
+            
+            return ResponseEntity.ok(birlesikListe);
+        } catch (AccessDeniedException e) {
+            log.warn("Aktif acil durum kayıtlarını listeleme yetki hatası (Doktor): {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+        } catch (Exception e) {
+            log.error("Aktif acil durum kayıtları listelenirken beklenmedik bir hata oluştu (Doktor):", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Acil durum kayıtları listelenirken sunucu hatası.");
+        }
+    }
+    // --- YENİ ENDPOINT SONU ---
 }
