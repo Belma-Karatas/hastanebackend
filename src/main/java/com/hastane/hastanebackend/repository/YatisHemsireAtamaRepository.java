@@ -2,6 +2,8 @@ package com.hastane.hastanebackend.repository;
 
 import com.hastane.hastanebackend.entity.YatisHemsireAtama;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query; // EKLENDİ
+import org.springframework.data.repository.query.Param; // EKLENDİ
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -46,4 +48,15 @@ public interface YatisHemsireAtamaRepository extends JpaRepository<YatisHemsireA
      */
     boolean existsByYatis_IdAndHemsire_Id(Integer yatisId, Integer hemsirePersonelId);
 
+    // --- YENİ EKLENEN METOT ---
+    /**
+     * Belirli bir hemşireye atanmış ve hastası henüz taburcu olmamış (aktif yatışta olan)
+     * YatisHemsireAtama kayıtlarını getirir. Sonuçlar yatışın giriş tarihine göre tersten sıralanır.
+     *
+     * @param hemsirePersonelId Hemşirenin Personel ID'si.
+     * @return Aktif yatışlara atanmış hemşire kayıtlarının listesi.
+     */
+    @Query("SELECT yha FROM YatisHemsireAtama yha WHERE yha.hemsire.id = :hemsirePersonelId AND yha.yatis.cikisTarihi IS NULL ORDER BY yha.yatis.girisTarihi DESC")
+    List<YatisHemsireAtama> findByHemsire_IdAndYatis_CikisTarihiIsNullOrderByYatis_GirisTarihiDesc(@Param("hemsirePersonelId") Integer hemsirePersonelId);
+    // --- YENİ EKLENEN METOT SONU ---
 }

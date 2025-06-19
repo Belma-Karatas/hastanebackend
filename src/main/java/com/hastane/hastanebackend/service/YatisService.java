@@ -74,7 +74,6 @@ public interface YatisService {
      */
     List<YatisGoruntuleDTO> getTumAktifYatislar(Integer talepEdenKullaniciId);
 
-    // --- YENİ EKLENEN METOT İMZALARI ---
     /**
      * Belirli bir durumdaki ve henüz çıkış yapmamış yatışları listeler.
      * Örneğin, durumu "YATAK BEKLIYOR" olanları almak için kullanılır.
@@ -95,10 +94,19 @@ public interface YatisService {
      * @return Güncellenmiş yatışın detaylarını içeren DTO.
      */
     YatisGoruntuleDTO yatakAta(Integer yatisId, Integer yatakId, Integer yapanKullaniciId);
-    // --- YENİ EKLENEN METOT İMZALARI SONU ---
-
 
     YatisGoruntuleDTO hemsireAta(Integer yatisId, HemsireAtaDTO hemsireAtaDTO, Integer yapanKullaniciId);
 
     YatisGoruntuleDTO hemsireAtamasiniKaldir(Integer yatisId, Integer yatisHemsireAtamaId, Integer yapanKullaniciId);
+
+    // --- YENİ EKLENEN METOT TANIMI ---
+    /**
+     * Belirli bir hemşireye atanmış ve hastası henüz taburcu olmamış
+     * (aktif yatışta olan) hastaların yatış bilgilerini DTO olarak listeler.
+     *
+     * @param hemsireKullaniciId Hemşirenin Kullanici ID'si (JWT'den alınacak).
+     * @return Hemşireye atanmış aktif yatışların YatisGoruntuleDTO listesi.
+     */
+    List<YatisGoruntuleDTO> getHemsireyeAtanmisAktifYatislar(Integer hemsireKullaniciId);
+    // --- YENİ EKLENEN METOT TANIMI SONU ---
 }
